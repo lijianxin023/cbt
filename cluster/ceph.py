@@ -141,6 +141,7 @@ class Ceph(Cluster):
     def __init__(self, config):
         super(Ceph, self).__init__(config)
         self.health_wait = config.get('health_wait', 5)
+        self.pool_wait = config.get('pool_wait', 60)
         self.restart_wait = config.get('restart_wait', 60)
         self.ceph_osd_cmd = config.get('ceph-osd_cmd', '/usr/bin/ceph-osd')
         self.ceph_mon_cmd = config.get('ceph-mon_cmd', '/usr/bin/ceph-mon')
@@ -934,6 +935,7 @@ class Ceph(Cluster):
             common.pdsh(settings.getnodes('head'), 'sudo %s -c %s osd pool set %s crush_ruleset %s' % (self.ceph_cmd, self.tmp_conf, name, crush_profile),
                         continue_if_error=False).communicate()
 
+        time.sleep(self.pool_wait)
         logger.info('Checking Health after pool creation.')
         self.check_health()
 
