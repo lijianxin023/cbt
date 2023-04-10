@@ -405,7 +405,10 @@ class Ceph(Cluster):
         logger.info(monhosts)
         for monhost, mons in monhosts.items():
             for mon, addr in mons.items():
-                cmd = cmd + ' --add %s %s' % (mon, addr)
+                if addr.startswith('['):
+                    cmd = cmd + ' --addv %s %s' % (mon, addr)
+                else:
+                    cmd = cmd + ' --add %s %s' % (mon, addr)
         cmd = cmd + ' --print %s' % self.monmap_fn
         common.pdsh(settings.getnodes('head'), cmd).communicate()
         common.rscp(settings.getnodes('head'), self.monmap_fn, '%s.tmp' % self.monmap_fn).communicate()
