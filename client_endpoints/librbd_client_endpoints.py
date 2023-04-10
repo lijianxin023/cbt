@@ -7,7 +7,10 @@ class LibrbdClientEndpoints(CephClientEndpoints):
         super(LibrbdClientEndpoints, self).__init__(cluster, config)
 
     def create(self):
-        self.create_rbd()
+        if not self.use_existing:
+                self.create_rbd()
+        else:
+             self.pool = self.name
 
     def mount(self):
         # Don't mount anything, just set the endpoints to the pool/rbd names

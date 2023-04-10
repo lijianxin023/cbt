@@ -10,6 +10,7 @@ class ClientEndpoints(object):
         self.endpoints_per_client = self.config.get('endpoints_per_client', 1)
         self.endpoints = []
         self.initialized = False
+        self.use_existing = self.config.get('use_existing', False)
 
     def initialize(self):
         self.create()
