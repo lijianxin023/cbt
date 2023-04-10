@@ -89,11 +89,59 @@ class OsdThread(threading.Thread):
             raise Exception('OSD %s creation did not complete' % self.osdnum)
         logger.info('thread %s completed creation of OSD %d elapsed time %f' % (self.name, self.osdnum, self.response_time))
 
+class OsdRestartThread(threading.Thread):
+    def __init__(self, cl_obj, devnumstr, osdnum, clusterid, host, osduuid, tmp_dir, crimson_cpuset):
+        threading.Thread.__init__(self, name='OsdThread-%d' % osdnum)
+        self.start_time = time.time()
+        self.response_time = -1.0
+        self.cl_obj = cl_obj
+        self.devnumstr = devnumstr
+        self.osdnum = osdnum
+        self.clusterid = clusterid
+        self.host = host
+        self.osduuid = osduuid
+        self.tmp_dir = tmp_dir
+        self.crimson_cpuset = crimson_cpuset
+        self.exc = None
+
+    def run(self):
+        try:
+            ceph_conf = self.cl_obj.tmp_conf
+            ceph_osd_cmd = self.cl_obj.ceph_osd_cmd
+            # if crimson is being used, optionally set a per-osd cpuset
+            if self.crimson_cpuset:
+                ceph_osd_cmd = "%s --cpuset %s" % (ceph_osd_cmd, self.crimson_cpuset)
+            phost = sshtarget(settings.cluster.get('user'), self.host)
+
+            # Start the OSD
+            pidfile = "%s/ceph-osd.%d.pid" % (self.cl_obj.pid_dir, self.osdnum)
+            cmd = '%s -c %s -i %d --pid-file=%s' % (ceph_osd_cmd, ceph_conf, self.osdnum, pidfile)
+            if self.cl_obj.osd_valgrind:
+                cmd = common.setup_valgrind(self.cl_obj.osd_valgrind, 'osd.%d' % self.osdnum, self.cl_obj.tmp_dir) + ' ' + cmd
+            else:
+                cmd = '%s %s' % (self.cl_obj.ceph_run_cmd, cmd)
+            stderr_file = "%s/osd.%d.stderr" % (self.cl_obj.tmp_dir, self.osdnum)
+            common.pdsh(phost, 'sudo sh -c "ulimit -n 16384 && ulimit -c unlimited && exec %s 2> %s"' % (cmd, stderr_file)).communicate()
+        except Exception as e:
+            self.exc = e
+        finally:
+            self.response_time = time.time() - self.start_time
+
+    def __str__(self):
+        return 'osd thrd %d %s %s' % (self.osdnum, self.host, self.osduuid)
+
+    # this is intended to be called by parent thread after join()
+    def postprocess(self):
+        if not (self.exc is None):
+            logger.error('thread %s: %s' % (self.name, str(self.exc)))
+            raise Exception('OSD %s restart did not complete' % self.osdnum)
+        logger.info('thread %s completed restart of OSD %d elapsed time %f' % (self.name, self.osdnum, self.response_time))
 
 class Ceph(Cluster):
     def __init__(self, config):
         super(Ceph, self).__init__(config)
         self.health_wait = config.get('health_wait', 5)
+        self.restart_wait = config.get('restart_wait', 60)
         self.ceph_osd_cmd = config.get('ceph-osd_cmd', '/usr/bin/ceph-osd')
         self.ceph_mon_cmd = config.get('ceph-mon_cmd', '/usr/bin/ceph-mon')
         self.ceph_run_cmd = config.get('ceph-run_cmd', '/usr/bin/ceph-run')
@@ -131,7 +179,8 @@ class Ceph(Cluster):
         self.tmp_conf = '%s/ceph.conf' % self.tmp_dir
         # If using an existing cluster, defualt to /etc/ceph/ceph.conf
         if self.use_existing:
-            self.tmp_conf = self.config.get('conf_file')
+            if not self.restart_osd:
+                self.tmp_conf = self.config.get('conf_file')
 
         self.osd_valgrind = config.get('osd_valgrind', None)
         self.mon_valgrind = config.get('mon_valgrind', None)
@@ -408,18 +457,27 @@ class Ceph(Cluster):
 
         threads_finished = 0
         for host in osdhosts:
-            for devnumstr in range(0, settings.cluster.get('osds_per_node')):
+            osd_count = settings.cluster.get('osds_per_node')
+            distributed = settings.cluster.get('osds_distributed')
+            osd_list = list(range(osdnum, osdnum+osd_count))
+            if settings.cluster.get('osds_distributed'):
+                if host in settings.cluster.get('osds_distributed'):
+                        osd_list = distributed[host]
+                        osd_count = len(osd_list)
+            logger.info('host %s distributed %s' % (host, osd_list) )
+            for devnumstr in range(0, osd_count):
                 pdshhost = sshtarget(user, host)
                 crimson_cpuset = self.crimson_cpusets[devnumstr] if devnumstr < len(self.crimson_cpusets) else None
                 # Build the OSD
                 osduuid = str(uuid.uuid4())
+                osdid = osd_list[devnumstr]
 #                osddir='/var/lib/ceph/osd/%s-%d'%(clusterid, osdnum)
                 osddir = '%s/osd-device-%s-data' % (self.mnt_dir, devnumstr)
                 # create the OSD first, so we know what number it has been assigned.
                 common.pdsh(pdshhost, 'sudo %s -c %s osd create %s' % (self.ceph_cmd, self.tmp_conf, osduuid)).communicate()
                 # bring the OSD online in background while continuing to create OSDs in foreground
-                thrd = OsdThread(self, devnumstr, osdnum, clusterid, host, osduuid, osddir, self.tmp_dir, crimson_cpuset)
-                logger.info('starting creation of OSD %d ' % osdnum)
+                thrd = OsdThread(self, devnumstr, osdid, clusterid, host, osduuid, osddir, self.tmp_dir, crimson_cpuset)
+                logger.info('starting creation of OSD %d data-id %d' % (osdid, devnumstr)  )
                 thrd.start()
                 thread_list.append(thrd)
 
@@ -431,13 +489,70 @@ class Ceph(Cluster):
                     thrd.postprocess()
                     threads_finished += 1
                 time.sleep(osd_online_interval)  # don't flood Ceph with OSD commands
-                osdnum += 1
+                osdnum += osd_count
 
         # wait for rest of them to finish
         for thrd in thread_list[threads_finished:]:
             # an exception is thrown if the thread failed, hopefully
             thrd.join(self.ceph_osd_online_tmo)
             thrd.postprocess()
+
+    def restart_osd(self):
+        self.distribute_conf()
+        osdnum = 0
+        osdhosts = settings.cluster.get('osds')
+        clusterid = self.config.get('clusterid')
+        thread_list = []
+
+        # set up degree of OSD creation parallelism
+
+        logger.info('OSD restart rate: < %d OSDs/sec , join timeout %d, parallel creates < %s' % (
+            self.ceph_osd_online_rate,
+            self.ceph_osd_online_tmo,
+            str(self.ceph_osd_parallel_creates)))
+        osd_online_interval = 1.0 / self.ceph_osd_online_rate
+        max_parallel_creates = settings.cluster.get('osds_per_node') * len(osdhosts)
+        if self.ceph_osd_parallel_creates:
+            max_parallel_creates = int(self.ceph_osd_parallel_creates)
+        threads_finished = 0
+
+        common.pdsh(settings.getnodes('osds'), 'sudo killall -9 ceph-osd').communicate()
+        for host in osdhosts:
+            osd_count = settings.cluster.get('osds_per_node')
+            distributed = settings.cluster.get('osds_distributed')
+            osd_list = list(range(osdnum, osdnum+osd_count))
+            if settings.cluster.get('osds_distributed'):
+                if host in settings.cluster.get('osds_distributed'):
+                        osd_list = distributed[host]
+                        osd_count = len(osd_list)
+            logger.info('host %s distributed %s' % (host, osd_list) )
+            for devnumstr in range(0, osd_count):
+                crimson_cpuset = self.crimson_cpusets[devnumstr] if devnumstr < len(self.crimson_cpusets) else None
+                # Build the OSD
+                osduuid = str(uuid.uuid4())
+                osdid = osd_list[devnumstr]
+
+                thrd = OsdRestartThread(self, devnumstr, osdid, clusterid, host, osduuid, self.tmp_dir, crimson_cpuset)
+                logger.info('starting restart of OSD %d data-id %d' % (osdid, devnumstr)  )
+                thrd.start()
+                thread_list.append(thrd)
+
+                # only allow up to max_parallel_creates threads to be active
+                active_thread_count = len(thread_list) - threads_finished
+                if active_thread_count >= max_parallel_creates:
+                    thrd = thread_list[threads_finished]
+                    thrd.join(self.ceph_osd_online_tmo)
+                    thrd.postprocess()
+                    threads_finished += 1
+                time.sleep(osd_online_interval)  # don't flood Ceph with OSD commands
+            osdnum += osd_count
+
+        # wait for rest of them to finish
+        for thrd in thread_list[threads_finished:]:
+            # an exception is thrown if the thread failed, hopefully
+            thrd.join(self.ceph_osd_online_tmo)
+            thrd.postprocess()
+        time.sleep(self.restart_wait)
 
     def start_mgrs(self):
         user = settings.cluster.get('user')

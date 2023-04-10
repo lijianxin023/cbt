@@ -46,6 +46,7 @@ def main(argv):
     global_init = collections.OrderedDict()
     rebuild_every_test = settings.cluster.get('rebuild_every_test', False)
     archive_dir = settings.cluster.get('archive_dir')
+    restart_osd = settings.cluster.get('restart_osd', False)
 
 
     # FIXME: Create ClusterFactory and parametrically match benchmarks and clusters.
@@ -80,6 +81,8 @@ def main(argv):
                 if rebuild_every_test:
                     cluster.initialize()
                     b.initialize()
+                if restart_osd:
+                    cluster.restart_osd()
                 # Always try to initialize endpoints before running the test
                 b.initialize_endpoints()
                 b.run()

@@ -15,6 +15,9 @@ class Cluster(object):
     def initialize(self):
         pass
 
+    def restart_osd(self):
+        pass
+
     def cleanup(self):
         pass
 
