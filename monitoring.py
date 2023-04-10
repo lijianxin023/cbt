@@ -27,6 +27,8 @@ class Monitoring(object):
             return PerfMonitoring(mconfig)
         if monitoring == 'blktrace':
             return BlktraceMonitoring(mconfig)
+        if monitoring == 'iostat':
+            return IostatMonitoring(mconfig)
 
 
 class CollectlMonitoring(Monitoring):
@@ -147,6 +149,32 @@ class BlktraceMonitoring(Monitoring):
     def _get_default_nodes():
         return ['osds']
 
+class IostatMonitoring(Monitoring):
+    def __init__(self, mconfig):
+        super(IostatMonitoring, self).__init__(mconfig)
+        self.interval = mconfig.get('interval', None)
+        self.count = mconfig.get('count', None)
+        self.user = settings.cluster.get('user')
+        self.args_template = mconfig.get('args')
+        self.perf_runners = []
+        self.iostat_dir = ''  # we need the output file to extract data
+
+    def start(self, directory):
+        iostat_dir = '%s/iostat' % directory
+        self.iostat_dir = iostat_dir
+        common.pdsh(self.nodes, 'mkdir -p -m0755 -- %s' % iostat_dir).communicate()
+
+        iostat_template = 'sudo iostat {} '.format(self.args_template)
+        iostat_cmd = iostat_template.format(interval=self.interval, count=self.count, iostat_dir=iostat_dir)
+        logger.debug("IostatMonitoring: display %s reports at %s second intervals" % (self.count, self.interval))
+        common.pdsh(self.nodes, iostat_cmd)
+
+    def stop(self, directory):
+        common.pdsh(self.nodes, 'sudo pkill -SIGINT -f iostat ').communicate()
+
+    @staticmethod
+    def _get_default_nodes():
+        return ['osds']
 
 def start(directory):
     for m in Monitoring._get_all():
