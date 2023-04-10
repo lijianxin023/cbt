@@ -43,6 +43,7 @@ class Fio(Benchmark):
         self.rate_iops = config.get('rate_iops', None)
         self.fio_out_format = "json,normal"
         self.prefill_flag = config.get('prefill', True)
+        self.prefill_bs = config.get('prefill_bs', '4M')
         self.norandommap = config.get("norandommap", False)
         self.out_dir = self.archive_dir
         self.client_endpoints = config.get("client_endpoints", None)
@@ -121,7 +122,7 @@ class Fio(Benchmark):
         cmd += ' --ioengine=%s' % self.ioengine
         cmd += ' --rw=write'
         cmd += ' --numjobs=%d' % self.numjobs
-        cmd += ' --bs=4M'
+        cmd += ' --bs=%s' % self.prefill_bs
         cmd += ' --iodepth=%d' % self.prefill_iodepth
         cmd += ' --size %dM' % self.size
         cmd += ' --output-format=%s' % self.fio_out_format
