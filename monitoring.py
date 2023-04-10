@@ -29,6 +29,8 @@ class Monitoring(object):
             return BlktraceMonitoring(mconfig)
         if monitoring == 'iostat':
             return IostatMonitoring(mconfig)
+        if monitoring == 'sar':
+            return SarMonitoring(mconfig)
 
 
 class CollectlMonitoring(Monitoring):
@@ -175,6 +177,34 @@ class IostatMonitoring(Monitoring):
     @staticmethod
     def _get_default_nodes():
         return ['osds']
+
+class SarMonitoring(Monitoring):
+    def __init__(self, mconfig):
+        super(SarMonitoring, self).__init__(mconfig)
+        self.interval = mconfig.get('interval', None)
+        self.count = mconfig.get('count', None)
+        self.info = mconfig.get('info', 'DEV')
+        self.user = settings.cluster.get('user')
+        self.args_template = mconfig.get('args')
+        self.perf_runners = []
+        self.sar_dir = ''  # we need the output file to extract data
+
+    def start(self, directory):
+        sar_dir = '%s/sar' % directory
+        self.sar_dir = sar_dir
+        common.pdsh(self.nodes, 'mkdir -p -m0755 -- %s' % sar_dir).communicate()
+
+        sar_template = 'sudo sar {} '.format(self.args_template)
+        sar_cmd = sar_template.format(info=self.info, interval=self.interval, count=self.count, sar_dir=sar_dir)
+        logger.debug("SarMonitoring: display %s reports at %s second intervals" % (self.count, self.interval))
+        common.pdsh(self.nodes, sar_cmd)
+
+    def stop(self, directory):
+        common.pdsh(self.nodes, 'sudo pkill -SIGINT -f sar ').communicate()
+
+    @staticmethod
+    def _get_default_nodes():
+        return ['clients', 'osds']
 
 def start(directory):
     for m in Monitoring._get_all():
