@@ -1053,6 +1053,15 @@ class Ceph(Cluster):
         self.mkpool('default.rgw.buckets.index', rgw_pools.get('buckets_index', 'default'), 'rgw')
         self.mkpool('default.rgw.buckets.data', rgw_pools.get('buckets_data', 'default'), 'rgw')
 
+    def restart_rgw_pools(self):
+        rgw_pools = self.config.get('rgw_pools', {})
+        self.rmpool('default.rgw.buckets', rgw_pools.get('buckets', 'default'))
+        self.rmpool('default.rgw.buckets.index', rgw_pools.get('buckets_index', 'default'))
+        self.rmpool('default.rgw.buckets.data', rgw_pools.get('buckets_data', 'default'))
+        self.mkpool('default.rgw.buckets', rgw_pools.get('buckets', 'default'), 'rgw')
+        self.mkpool('default.rgw.buckets.index', rgw_pools.get('buckets_index', 'default'), 'rgw')
+        self.mkpool('default.rgw.buckets.data', rgw_pools.get('buckets_data', 'default'), 'rgw')
+
 class RecoveryTestThreadBlocking(threading.Thread):
     def __init__(self, config, cluster, callback, stoprequest, haltrequest):
         threading.Thread.__init__(self)
