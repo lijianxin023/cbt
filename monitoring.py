@@ -4,6 +4,7 @@ import os.path
 import common
 import settings
 import logging
+import time
 
 logger = logging.getLogger("cbt")
 
@@ -19,6 +20,7 @@ class Monitoring(object):
         # settings for the sake of explicitness
         nodes_list = mconfig.get('nodes', self._get_default_nodes())
         self.nodes = settings.getnodes(*nodes_list)
+        self.wait_time = mconfig.get('wait_time', 0)
 
     @staticmethod
     def _get_all():
@@ -72,6 +74,7 @@ class PerfMonitoring(Monitoring):
         self.perf_dir = ''  # we need the output file to extract data
 
     def start(self, directory):
+        time.sleep(self.wait_time)
         perf_dir = '%s/perf' % directory
         self.perf_dir = perf_dir
         common.pdsh(self.nodes, 'mkdir -p -m0755 -- %s' % perf_dir).communicate()
@@ -170,6 +173,7 @@ class IostatMonitoring(Monitoring):
         self.iostat_dir = ''  # we need the output file to extract data
 
     def start(self, directory):
+        time.sleep(self.wait_time)
         iostat_dir = '%s/iostat' % directory
         self.iostat_dir = iostat_dir
         common.pdsh(self.nodes, 'mkdir -p -m0755 -- %s' % iostat_dir).communicate()
@@ -198,6 +202,7 @@ class SarMonitoring(Monitoring):
         self.sar_dir = ''  # we need the output file to extract data
 
     def start(self, directory):
+        time.sleep(self.wait_time)
         sar_dir = '%s/sar' % directory
         self.sar_dir = sar_dir
         common.pdsh(self.nodes, 'mkdir -p -m0755 -- %s' % sar_dir).communicate()
@@ -228,6 +233,7 @@ class MetricsMonitoring(Monitoring):
         self.metrics_dir = ''  # we need the output file to extract data
 
     def start(self, directory):
+        time.sleep(self.wait_time)
         metrics_dir = '%s/metrics' % directory
         self.metrics_dir = metrics_dir
         common.pdsh(self.nodes, 'mkdir -p -m0755 -- %s' % metrics_dir).communicate()
