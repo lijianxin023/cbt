@@ -7,6 +7,12 @@ import logging
 
 logger = logging.getLogger("cbt")
 
+def sshtarget(user, host):
+    h = host
+    if user:
+        h = '%s@%s' % (user, host)
+    return h
+
 class Monitoring(object):
     def __init__(self, mconfig):
         # the initializers should be the very single places interrogating
@@ -31,6 +37,8 @@ class Monitoring(object):
             return IostatMonitoring(mconfig)
         if monitoring == 'sar':
             return SarMonitoring(mconfig)
+        if monitoring == 'metrics':
+            return MetricsMonitoring(mconfig)
 
 
 class CollectlMonitoring(Monitoring):
@@ -205,6 +213,57 @@ class SarMonitoring(Monitoring):
     @staticmethod
     def _get_default_nodes():
         return ['clients', 'osds']
+
+class MetricsMonitoring(Monitoring):
+    def __init__(self, mconfig):
+        super(MetricsMonitoring, self).__init__(mconfig)
+        self.interval = mconfig.get('interval', None)
+        self.user = settings.cluster.get('user')
+        self.args_template = mconfig.get('args')
+        self.num = mconfig.get('osd_num', 1)
+        self.interval = mconfig.get('interval', 10)
+        self.count = mconfig.get('count', 1)
+        self.metric = mconfig.get('metric')
+        self.ceph_cmd = settings.cluster.get('ceph_cmd')
+        self.metrics_dir = ''  # we need the output file to extract data
+
+    def start(self, directory):
+        metrics_dir = '%s/metrics' % directory
+        self.metrics_dir = metrics_dir
+        common.pdsh(self.nodes, 'mkdir -p -m0755 -- %s' % metrics_dir).communicate()
+        logger.debug("MetricsMonitoring: display %s metric at %s second intervals" % (self.metric, self.interval))
+        metrics_template = '{} {} '.format(self.ceph_cmd, self.args_template)
+
+        osdhosts = settings.cluster.get('osds')
+        osdnum = 0
+        user = settings.cluster.get('user')
+        for host in osdhosts:
+            osd_count = settings.cluster.get('osds_per_node')
+            distributed = settings.cluster.get('osds_distributed')
+            osd_list = list(range(osdnum, osdnum+osd_count))
+            if settings.cluster.get('osds_distributed'):
+                if host in settings.cluster.get('osds_distributed'):
+                        osd_list = distributed[host]
+                        osd_count = len(osd_list)
+            pdshhost = sshtarget(user, host)
+            osd_end = osdnum + osd_count
+
+            metrics_cmd = metrics_template.format(id='${id}', metric=self.metric, metrics_dir=self.metrics_dir)
+            loop_cmd = [ 'for((i=0;i<%s;++i))'%self.count,
+            'do for((id=%s;id<%s;++id)) ' %(osdnum, osd_end),
+            'do sudo', metrics_cmd,
+            ';done;',
+            'sleep %s;' % self.interval,
+            'done']
+            common.pdsh(pdshhost, loop_cmd)
+            osdnum = osd_end
+
+    def stop(self, directory):
+        common.pdsh(self.nodes, 'sudo pkill -SIGINT -f dump_metrics').communicate()
+
+    @staticmethod
+    def _get_default_nodes():
+        return ['osds']
 
 def start(directory):
     for m in Monitoring._get_all():
