@@ -4,6 +4,7 @@ from cluster.ceph import Ceph
 
 from client_endpoints.librbd_client_endpoints import LibrbdClientEndpoints
 from client_endpoints.rbdkernel_client_endpoints import RbdKernelClientEndpoints
+from client_endpoints.krbd_client_endpoints import KRbdClientEndpoints
 from client_endpoints.rbdnbd_client_endpoints import RbdNbdClientEndpoints
 from client_endpoints.rbdfuse_client_endpoints import RbdFuseClientEndpoints
 from client_endpoints.rbdtcmu_client_endpoints import RbdTcmuClientEndpoints
@@ -33,6 +34,8 @@ def get_ceph(cluster, name):
         raise ValueError('No driver defined in the "%s" client_endpoints.' % name)
     elif driver == "librbd":
         ce_objects[key] = LibrbdClientEndpoints(cluster, ce_config)
+    elif driver == "krbd":
+        ce_objects[key] = KRbdClientEndpoints(cluster, ce_config)
     elif driver == "rbd-kernel":
         ce_objects[key] = RbdKernelClientEndpoints(cluster, ce_config)
     elif driver == "rbd-nbd":
