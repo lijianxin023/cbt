@@ -43,6 +43,8 @@ class Monitoring(object):
             return MetricsMonitoring(mconfig)
         if monitoring == 'ptat':
             return PTATMonitoring(mconfig)
+        if monitoring == 'pdu':
+            return PDUMonitoring(mconfig)
 
 
 class CollectlMonitoring(Monitoring):
@@ -220,6 +222,7 @@ class SarMonitoring(Monitoring):
     @staticmethod
     def _get_default_nodes():
         return ['clients', 'osds']
+
 class PTATMonitoring(Monitoring):
     def __init__(self, mconfig):
         super(PTATMonitoring, self).__init__(mconfig)
@@ -246,6 +249,37 @@ class PTATMonitoring(Monitoring):
     @staticmethod
     def _get_default_nodes():
         return ['osds']
+
+class PDUMonitoring(Monitoring):
+    def __init__(self, mconfig):
+        super(PDUMonitoring, self).__init__(mconfig)
+        self.pdu_command_dir = mconfig.get('pdu_command_dir', None)
+        self.log_dir = mconfig.get('log_dir', None)
+        self.interval = mconfig.get('interval')
+        self.benchmark_name = mconfig.get('benchmark_name')
+        self.args_template = mconfig.get('args')
+        self.pdu_dir = ''  # we need the output file to extract data
+
+    def start(self, directory):
+        pdu_dir = '%s/pdu' % directory
+        self.pdu_dir = pdu_dir
+        common.pdsh(self.nodes, 'mkdir -p -m0755 -- %s' % pdu_dir).communicate()
+
+        pdu_template = 'sudo ./power_monitor_system_name.sh {} '.format(self.args_template)
+        pdu_cmd = pdu_template.format(benchmark_name=self.benchmark_name, interval=self.interval, pdu_dir=pdu_dir)
+        cd_cmd = "cd %s && " % self.pdu_command_dir
+        pdu_cmd = cd_cmd + pdu_cmd
+        logger.debug("PDUonitoring: display reports at %s second intervals" % (self.interval))
+        common.pdsh(self.nodes, pdu_cmd)
+
+    def stop(self, directory):
+        common.pdsh(self.nodes, 'ps -aux | grep power_monitor_system_name.sh | tr -s " " | cut -d " " -f 2 | xargs sudo kill').communicate()
+        common.pdsh(self.nodes, 'ps -aux | grep power_monitor.sh | tr -s " " | cut -d " " -f 2 | xargs sudo kill').communicate()
+
+    @staticmethod
+    def _get_default_nodes():
+        return ['osds']
+
 class MetricsMonitoring(Monitoring):
     def __init__(self, mconfig):
         super(MetricsMonitoring, self).__init__(mconfig)
