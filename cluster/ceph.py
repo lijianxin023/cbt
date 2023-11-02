@@ -143,6 +143,7 @@ class Ceph(Cluster):
         self.health_wait = config.get('health_wait', 5)
         self.pool_wait = config.get('pool_wait', 60)
         self.restart_wait = config.get('restart_wait', 60)
+        self.restart_wait = config.get('restart_wait', 60)
         self.ceph_osd_cmd = config.get('ceph-osd_cmd', '/usr/bin/ceph-osd')
         self.ceph_mon_cmd = config.get('ceph-mon_cmd', '/usr/bin/ceph-mon')
         self.ceph_run_cmd = config.get('ceph-run_cmd', '/usr/bin/ceph-run')
@@ -633,7 +634,7 @@ class Ceph(Cluster):
                         rgw_frontends = "beast"
                     rgw_frontends += " ssl_port=%s" % port
 
-                cmd = '%s -c %s -n %s --log-file=%s/rgw.log' % (self.ceph_rgw_cmd, self.tmp_conf, rgwname, self.log_dir)
+                cmd = '%s -c %s -n %s --log-file=%s/%s.log' % (self.ceph_rgw_cmd, self.tmp_conf, rgwname, self.log_dir, rgwname)
                 if rgw_frontends is not None:
                     cmd += " --rgw-frontends='%s'" % rgw_frontends
                 if self.rgw_valgrind:
@@ -764,6 +765,18 @@ class Ceph(Cluster):
     def dump_config(self, run_dir):
         common.pdsh(settings.getnodes('osds'), 'sudo %s -c %s daemon osd.0 config show > %s/ceph_settings.out' % (self.ceph_cmd, self.tmp_conf, run_dir)).communicate()
 
+    def dump_perf(self, run_dir):
+        common.pdsh(settings.getnodes('osds'), 'sudo %s -c %s daemon osd.0 perf dump > %s/ceph_perf.out' % (self.ceph_cmd, self.tmp_conf, run_dir)).communicate()
+    
+    def dump_health(self, run_dir):
+        common.pdsh(settings.getnodes('head'), 'sudo %s health > %s/ceph_health.out' % (self.ceph_cmd, run_dir)).communicate()
+
+    def dump_df(self, run_dir):
+        common.pdsh(settings.getnodes('head'), 'sudo %s osd df > %s/ceph_df.out' % (self.ceph_cmd, run_dir)).communicate()
+
+    def dump_pg(self, run_dir):
+        common.pdsh(settings.getnodes('head'), 'sudo %s pg dump > %s/ceph_pg.out' % (self.ceph_cmd, run_dir)).communicate()
+
     def dump_historic_ops(self, run_dir):
         common.pdsh(settings.getnodes('osds'), 'find /var/run/ceph/ceph-osd*.asok -maxdepth 1 -exec sudo %s --admin-daemon {} dump_historic_ops \; > %s/historic_ops.out' % (self.ceph_cmd, run_dir)).communicate()
 
@@ -863,7 +876,11 @@ class Ceph(Cluster):
         for name, profile in list(erasure_profiles.items()):
             k = profile.get('erasure_k', 6)
             m = profile.get('erasure_m', 2)
-            common.pdsh(settings.getnodes('head'), '%s -c %s osd erasure-code-profile set %s crush-failure-domain=osd k=%s m=%s' % (self.ceph_cmd, self.tmp_conf, name, k, m)).communicate()
+            plugin = profile.get('plugin', None)
+            cmd = '%s -c %s osd erasure-code-profile set %s crush-failure-domain=osd k=%s m=%s' % (self.ceph_cmd, self.tmp_conf, name, k, m)
+            if plugin:
+                cmd += ' plugin=%s ' % plugin
+            common.pdsh(settings.getnodes('head'), cmd).communicate()
             self.set_ruleset(name)
 
     def mkpool(self, name, profile_name, application, base_name=None):
@@ -940,6 +957,8 @@ class Ceph(Cluster):
 
         time.sleep(self.pool_wait)
         logger.info('Checking Health after pool creation.')
+        pool_wait = profile.get('wait', 10)
+        time.sleep(pool_wait)
         self.check_health()
 
         if prefill_objects > 0 or prefill_time > 0:
