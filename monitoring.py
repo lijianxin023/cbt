@@ -41,6 +41,8 @@ class Monitoring(object):
             return SarMonitoring(mconfig)
         if monitoring == 'metrics':
             return MetricsMonitoring(mconfig)
+        if monitoring == 'ptat':
+            return PTATMonitoring(mconfig)
 
 
 class CollectlMonitoring(Monitoring):
@@ -218,7 +220,32 @@ class SarMonitoring(Monitoring):
     @staticmethod
     def _get_default_nodes():
         return ['clients', 'osds']
+class PTATMonitoring(Monitoring):
+    def __init__(self, mconfig):
+        super(PTATMonitoring, self).__init__(mconfig)
+        self.log_dir = mconfig.get('log_dir', None)
+        self.interval = mconfig.get('interval')
+        self.time = mconfig.get('time')
+        self.ptat_cmd = mconfig.get('ptat_cmd')
+        self.args_template = mconfig.get('args')
+        self.ptat_dir = ''  # we need the output file to extract data
 
+    def start(self, directory):
+        ptat_dir = '%s/ptat' % directory
+        self.ptat_dir = ptat_dir
+        common.pdsh(self.nodes, 'mkdir -p -m0755 -- %s' % ptat_dir).communicate()
+
+        ptat_template = 'sudo {command} {args} '.format(command=self.ptat_cmd, args=self.args_template)
+        ptat_cmd = ptat_template.format(interval=self.interval, time=self.time, ptat_dir=ptat_dir)
+        logger.debug("PTATMonitoring: display reports at %s second intervals" % (self.interval))
+        common.pdsh(self.nodes, ptat_cmd)
+
+    def stop(self, directory):
+        common.pdsh(self.nodes, 'sudo pkill -SIGINT -f ptat ').communicate()
+
+    @staticmethod
+    def _get_default_nodes():
+        return ['osds']
 class MetricsMonitoring(Monitoring):
     def __init__(self, mconfig):
         super(MetricsMonitoring, self).__init__(mconfig)
