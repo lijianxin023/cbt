@@ -13,6 +13,9 @@ from client_endpoints.cephfsfuse_client_endpoints import CephfsFuseClientEndpoin
 from client_endpoints.rgws3_client_endpoints import RgwS3ClientEndpoints
 ce_objects = {}
 
+def reset():
+    ce_objects.clear()
+    
 def get(cluster, name):
     if isinstance(cluster, Ceph):
         return get_ceph(cluster, name)

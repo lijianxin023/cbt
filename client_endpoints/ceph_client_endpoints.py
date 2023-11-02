@@ -27,8 +27,9 @@ class CephClientEndpoints(ClientEndpoints):
         self.recov_pool = None
         self.recov_pool_profile = config.get('recov_pool_profile', 'default')
         self.order = config.get('order', 22)
+        self.default_features = config.get('default_features', None)
         self.disabled_features = config.get('disabled_features', None)
-
+        self.mon_addr = config.get('mon_addr', None) 
         # get the list of mons
         self.mon_addrs = []
         mon_hosts = self.cluster.get_mon_hosts()
@@ -98,6 +99,8 @@ class CephClientEndpoints(ClientEndpoints):
 
                 # Make the RBD Image
                 cmd = '%s -c %s create %s --pool %s --size %s %s --order %s' % (self.rbd_cmd, self.tmp_conf, rbd_name, self.pool, self.endpoint_size, dp_option, self.order)
+                if self.default_features:
+                    cmd += ' --rbd_default_features=%s' % (self.default_features)
                 common.pdsh(settings.getnodes('head'), cmd, continue_if_error=False).communicate()
 
                 # Disable Features
