@@ -98,9 +98,10 @@ class PerfMonitoring(Monitoring):
         else:
             logger.debug("PerfMonitoring: remote_node");
             # ${pid} will be handled by remote's sh
-            perf_cmd = perf_template.format(perf_dir=perf_dir, pid='${pid}')
-            common.pdsh(self.nodes, ['for pid in `cat %s/%s`;' % (self.pid_dir, self.pid_glob),
-                                     'do', perf_cmd,
+            perf_cmd = perf_template.format(perf_dir=perf_dir, pid='${pid}', name='${name}')
+            common.pdsh(self.nodes, ['for pid_path in `ls %s/%s`;' % (self.pid_dir, self.pid_glob),
+                                     'do pid=`cat ${pid_path}` ; filename=${pid_path##*/} ; name=${filename%.*} ;',
+                                     perf_cmd,
                                      'done'])
 
     def stop(self, directory):
