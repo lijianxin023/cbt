@@ -494,7 +494,7 @@ class Ceph(Cluster):
                     thrd.postprocess()
                     threads_finished += 1
                 time.sleep(osd_online_interval)  # don't flood Ceph with OSD commands
-                osdnum += osd_count
+            osdnum += osd_count
 
         # wait for rest of them to finish
         for thrd in thread_list[threads_finished:]:
