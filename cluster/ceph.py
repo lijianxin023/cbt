@@ -944,6 +944,18 @@ class Ceph(Cluster):
             common.pdsh(settings.getnodes('head'), 'sudo %s -c %s osd pool set %s min_size %d %s' % (self.ceph_cmd, self.tmp_conf, name, pool_min_repl_size, yes_flag),
                         continue_if_error=False).communicate()
 
+            current_pg_num=0
+            while current_pg_num != pg_size:
+                time.sleep(2)
+                out, err = common.pdsh(settings.getnodes('head'), "sudo %s -c %s osd pool get %s pg_num" % (self.ceph_cmd, self.tmp_conf, name), continue_if_error=False).communicate()
+                current_pg_num=int(out.split()[-1])
+            current_pgp_num=0
+            while current_pgp_num != pgp_size:
+                time.sleep(2)
+                out, err = common.pdsh(settings.getnodes('head'), "sudo %s -c %s osd pool get %s pgp_num" % (self.ceph_cmd, self.tmp_conf, name), continue_if_error=False).communicate()
+                current_pgp_num=int(out.split()[-1])
+
+
         if crush_profile:
             try:
                 rule_index = int(crush_profile)
@@ -994,6 +1006,19 @@ class Ceph(Cluster):
         if cache_profile:
             cache_name = '%s-cache' % name
             self.mkpool(cache_name, cache_profile, name, application)
+
+        # http://www.strugglesquirrel.com/2019/05/22/%E8%B6%85%E5%AE%9E%E7%94%A8%E7%9A%84pg%E5%9D%87%E8%A1%A1%E5%B7%A5%E5%85%B7upmap/
+        # pg balance
+        node = settings.getnodes('head')
+        common.pdsh(node, 'ceph -c %s osd getmap -o /tmp/thisosdmap' % (self.tmp_conf)).communicate()
+        #common.pdsh(node, 'osdmaptool --test-map-pgs --pool 6 /tmp/thisosdmap').communicate()
+        common.pdsh(node, 'osdmaptool /tmp/thisosdmap --upmap /tmp/afterupmap --upmap-pool %s  --upmap-max 1000 --upmap-deviation 1' % (name)).communicate()
+        #common.pdsh(node, 'osdmaptool --test-map-pgs --pool 6 /tmp/thisosdmap').communicate()
+        with open("/tmp/afterupmap") as file:
+            for line in file.readlines():
+                common.pdsh(node, line.strip()+' -c %s' % (self.tmp_conf)).communicate()
+        common.pdsh(node, 'ceph -c %s osd getmap -o /tmp/new_thisosdmap' % (self.tmp_conf)).communicate()
+
 
     def rmpool(self, name, profile_name):
         pool_profiles = self.config.get('pool_profiles', {'default': {}})
