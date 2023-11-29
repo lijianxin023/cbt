@@ -45,6 +45,10 @@ class Monitoring(object):
             return PTATMonitoring(mconfig)
         if monitoring == 'pdu':
             return PDUMonitoring(mconfig)
+        if monitoring == 'svr_info':
+            return SVRInfoMonitoring(mconfig)
+        if monitoring == 'emon_sep':
+            return EmonSepMonitoring(mconfig)
 
 
 class CollectlMonitoring(Monitoring):
@@ -277,6 +281,56 @@ class PDUMonitoring(Monitoring):
         common.pdsh(self.nodes, 'ps -aux | grep power_monitor_system_name.sh | tr -s " " | cut -d " " -f 2 | xargs sudo kill').communicate()
         common.pdsh(self.nodes, 'ps -aux | grep power_monitor.sh | tr -s " " | cut -d " " -f 2 | xargs sudo kill').communicate()
 
+    @staticmethod
+    def _get_default_nodes():
+        return ['osds']
+
+
+class SVRInfoMonitoring(Monitoring):
+    def __init__(self, mconfig):
+        super(SVRInfoMonitoring, self).__init__(mconfig)
+        self.svr_info_command = mconfig.get('svr_info_command', None)
+        self.profile_duration = mconfig.get('profile_duration', 300)
+        self.profile_interval = mconfig.get('profile_interval', 2)
+        self.analyze_duration = mconfig.get('analyze_duration', 60)
+        self.analyze_frequency = mconfig.get('analyze_frequency', 11)
+        self.svr_info_dir = ''
+        self.args_template = mconfig.get('args')
+    def start(self, directory):
+        svr_info_dir = '%s/svr_info' % directory
+        self.svr_info = svr_info_dir
+        common.pdsh(self.nodes, 'mkdir -p -m0755 -- %s' % svr_info_dir).communicate()
+
+        svr_info_template = 'sudo {command} {args}'.format(command=self.svr_info_command, args=self.args_template)
+        svr_info_command = svr_info_template.format(profile_duration=self.profile_duration, profile_interval=self.profile_interval,analyze_duration=self.analyze_duration, analyze_frequency=self.analyze_frequency, svr_info_dir=svr_info_dir)
+        logger.debug("svr_info")
+        common.pdsh(self.nodes, svr_info_command)
+
+    def stop(self, directory):
+        pass
+
+    @staticmethod
+    def _get_default_nodes():
+        return ['head']
+
+class EmonSepMonitoring(Monitoring):
+    def __init__(self, mconfig):
+        super(EmonSepMonitoring, self).__init__(mconfig)
+        self.emon_command_dir = mconfig.get('emon_command_dir', '/opt/intel/sep')
+        self.emon_dir = ''
+    def start(self, directory):
+        emon_dir = '%s/emon_sep' % directory
+        self.emon_dir = emon_dir
+        common.pdsh(self.nodes, 'mkdir -p -m0755 -- %s' % emon_dir).communicate()
+
+        emon_command = "source {}/sep_vars.sh; emon -collect-edp -f {}/emon.dat".format(self.emon_command_dir, emon_dir)
+        logger.debug("emon sep")
+        common.pdsh(self.nodes, emon_command)
+    def stop(self, directory):
+#        mv_file_command = "mv {}/config/edp/edp_config.txt {}/".format(self.emon_command_dir, self.emon_dir)
+#        common.pdsh(self.nodes, mv_file_command)
+        emon_stop_command = "source {}/sep_vars.sh; emon -stop && sleep 5".format(self.emon_command_dir)
+        common.pdsh(self.nodes, emon_stop_command)
     @staticmethod
     def _get_default_nodes():
         return ['osds']
