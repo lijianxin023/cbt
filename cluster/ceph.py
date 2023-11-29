@@ -944,6 +944,18 @@ class Ceph(Cluster):
             common.pdsh(settings.getnodes('head'), 'sudo %s -c %s osd pool set %s min_size %d %s' % (self.ceph_cmd, self.tmp_conf, name, pool_min_repl_size, yes_flag),
                         continue_if_error=False).communicate()
 
+            current_pg_num=0
+            while current_pg_num != pg_size:
+                time.sleep(2)
+                out, err = common.pdsh(settings.getnodes('head'), "sudo %s -c %s osd pool get %s pg_num" % (self.ceph_cmd, self.tmp_conf, name), continue_if_error=False).communicate()
+                current_pg_num=int(out.split()[-1])
+            current_pgp_num=0
+            while current_pgp_num != pgp_size:
+                time.sleep(2)
+                out, err = common.pdsh(settings.getnodes('head'), "sudo %s -c %s osd pool get %s pgp_num" % (self.ceph_cmd, self.tmp_conf, name), continue_if_error=False).communicate()
+                current_pgp_num=int(out.split()[-1])
+
+
         if crush_profile:
             try:
                 rule_index = int(crush_profile)
