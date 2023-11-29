@@ -21,6 +21,7 @@ class Monitoring(object):
         nodes_list = mconfig.get('nodes', self._get_default_nodes())
         self.nodes = settings.getnodes(*nodes_list)
         self.wait_time = mconfig.get('wait_time', 0)
+        self.wait_flag = False
 
     @staticmethod
     def _get_all():
@@ -389,10 +390,16 @@ class MetricsMonitoring(Monitoring):
 
 def start(directory):
     for m in Monitoring._get_all():
+        m.wait_flag = False
         m.start(directory)
 
+def start_with_wait(directory):
+    for m in Monitoring._get_all():
+        m.wait_flag = True
+        m.start(directory)
 
 def stop(directory=None):
+    logger.debug("stop monitor")
     for m in Monitoring._get_all():
         m.stop(directory)
 
